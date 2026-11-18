@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "strictNullChecks": true,
+    "types": []
+  },
+  "files"          : [
+    "typescript-definition-test.ts"
+  ]
+}

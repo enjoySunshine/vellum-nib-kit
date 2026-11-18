@@ -1,0 +1,641 @@
+/*
+ * Paper.js - The Swiss Army Knife of Vector Graphics Scripting.
+ * http://paperjs.org/
+ *
+ * Copyright (c) 2011 - 2020, Jürg Lehni & Jonathan Puckey
+ * http://juerglehni.com/ & https://puckey.studio/
+ *
+ * Distributed under the MIT license. See LICENSE file for details.
+ *
+ * All rights reserved.
+ */
+
+import { describe, test } from 'vitest'
+import paper, {
+  CompoundPath,
+  Group,
+  Matrix,
+  Path,
+  PatternDefinition,
+  PointText,
+  Raster,
+  Rectangle
+} from 'paper'
+import { createScene, expectScene } from './scene.js'
+
+function loadRaster(source) {
+  return new Promise((resolve, reject) => {
+    const raster = new Raster(source)
+    raster.onLoad = () => resolve(raster)
+    raster.onError = reject
+  })
+}
+
+describe('Blend modes', () => {
+  test('The CSS blend modes and our own', async () => {
+    const style = createScene(420, 330)
+    const modes = [
+      'normal',
+      'multiply',
+      'screen',
+      'overlay',
+      'soft-light',
+      'hard-light',
+      'color-dodge',
+      'color-burn',
+      'darken',
+      'lighten',
+      'difference',
+      'exclusion',
+      'hue',
+      'saturation',
+      'color',
+      'luminosity',
+      'add',
+      'subtract',
+      'average',
+      'pin-light',
+      'negation'
+    ]
+    modes.forEach((blendMode, i) => {
+      const x = (i % 6) * 70 + 35
+      const y = Math.floor(i / 6) * 80 + 35
+      new Path.Circle({ center: [x - 8, y], radius: 20, fillColor: '#e63' })
+      new Path.Circle({
+        center: [x + 8, y],
+        radius: 20,
+        fillColor: '#39c',
+        blendMode
+      })
+      new PointText({
+        ...style,
+        point: [x, y + 35],
+        content: blendMode,
+        fontSize: 9,
+        justification: 'center'
+      })
+    })
+    await expectScene()
+  })
+
+  test('Opacity of items and of groups', async () => {
+    createScene(300, 110)
+    const colors = ['#e63', '#39c', '#9c3']
+    const circles = x =>
+      colors.map(
+        (fillColor, i) =>
+          new Path.Circle({
+            center: [x + i * 25, 55],
+            radius: 30,
+            fillColor,
+            strokeColor: 'black',
+            strokeWidth: 4
+          })
+      )
+    // Each item half transparent, with its stroke on its own fill:
+    circles(30).forEach(circle => (circle.opacity = 0.5))
+    // The group half transparent as a whole:
+    new Group({ children: circles(190), opacity: 0.5 })
+    await expectScene()
+  })
+})
+
+describe('Shadows', () => {
+  test('Fills, strokes, groups and text', async () => {
+    const style = createScene(300, 200)
+    const shadow = {
+      shadowColor: 'rgba(0, 0, 0, 0.5)',
+      shadowBlur: 8,
+      shadowOffset: [5, 5]
+    }
+    new Path.Rectangle({
+      rectangle: new Rectangle(20, 20, 60, 60),
+      fillColor: '#fc3',
+      ...shadow
+    })
+    new Path.Circle({
+      center: [150, 50],
+      radius: 30,
+      strokeColor: '#39c',
+      strokeWidth: 6,
+      ...shadow
+    })
+    // Fill and stroke cast one shadow together:
+    new Path.Star({
+      center: [250, 50],
+      points: 5,
+      radius1: 15,
+      radius2: 32,
+      fillColor: '#e63',
+      strokeColor: 'black',
+      strokeWidth: 3,
+      ...shadow
+    })
+    new Group({
+      children: [
+        new Path.Circle({ center: [60, 140], radius: 25, fillColor: '#9c3' }),
+        new Path.Circle({ center: [90, 150], radius: 25, fillColor: '#39c' })
+      ],
+      ...shadow
+    })
+    new PointText({
+      ...style,
+      ...shadow,
+      point: [150, 155],
+      content: 'Shadow',
+      fontSize: 36
+    })
+    await expectScene()
+  })
+})
+
+describe('Clipping', () => {
+  test('Clip masks, nested and compound', async () => {
+    createScene(300, 120)
+    const stripes = x =>
+      Array.from(
+        { length: 10 },
+        (_, i) =>
+          new Path.Rectangle({
+            rectangle: new Rectangle(x + i * 10, 10, 5, 100),
+            fillColor: i % 2 ? '#39c' : '#e63'
+          })
+      )
+    new Group({
+      children: [
+        new Path.Circle({ center: [50, 60], radius: 40 }),
+        ...stripes(0)
+      ],
+      clipped: true
+    })
+    new Group({
+      children: [
+        new Path.Rectangle(new Rectangle(110, 20, 80, 80)),
+        new Group({
+          children: [
+            new Path.Circle({ center: [150, 60], radius: 45 }),
+            ...stripes(100)
+          ],
+          clipped: true
+        })
+      ],
+      clipped: true
+    })
+    new Group({
+      children: [
+        new CompoundPath({
+          children: [
+            new Path.Circle({ center: [250, 60], radius: 45 }),
+            new Path.Circle({ center: [250, 60], radius: 20 })
+          ],
+          fillRule: 'evenodd'
+        }),
+        ...stripes(200)
+      ],
+      clipped: true
+    })
+    await expectScene()
+  })
+})
+
+describe('Gradients', () => {
+  test('Linear, radial, highlights and strokes', async () => {
+    createScene(300, 200)
+    new Path.Rectangle({
+      rectangle: new Rectangle(10, 10, 80, 80),
+      fillColor: {
+        gradient: { stops: ['#fc3', '#e63', '#39c'] },
+        origin: [10, 10],
+        destination: [90, 90]
+      }
+    })
+    new Path.Circle({
+      center: [150, 50],
+      radius: 40,
+      fillColor: {
+        gradient: { stops: ['white', '#39c'], radial: true },
+        origin: [150, 50],
+        destination: [190, 50]
+      }
+    })
+    new Path.Circle({
+      center: [250, 50],
+      radius: 40,
+      fillColor: {
+        gradient: { stops: ['white', '#9c3', 'black'], radial: true },
+        origin: [250, 50],
+        destination: [290, 50],
+        highlight: [235, 35]
+      }
+    })
+    new Path.Circle({
+      center: [50, 150],
+      radius: 30,
+      strokeWidth: 12,
+      strokeColor: {
+        gradient: { stops: ['#e63', '#39c'] },
+        origin: [20, 150],
+        destination: [80, 150]
+      }
+    })
+    // The gradient transforms with the item:
+    const rect = new Path.Rectangle({
+      rectangle: new Rectangle(120, 120, 60, 60),
+      fillColor: {
+        gradient: {
+          stops: [
+            ['#e63', 0],
+            ['#e63', 0.5],
+            ['#39c', 0.5],
+            ['#39c', 1]
+          ]
+        },
+        origin: [120, 150],
+        destination: [180, 150]
+      },
+      applyMatrix: false
+    })
+    rect.rotate(30)
+    rect.scale(1.3, 0.8)
+    new Path.Rectangle({
+      rectangle: new Rectangle(210, 120, 80, 60),
+      fillColor: {
+        gradient: { stops: [['#fc3', 0.2], ['rgba(57, 153, 204, 0)', 0.8]] },
+        origin: [210, 150],
+        destination: [290, 150]
+      }
+    })
+    await expectScene()
+  })
+})
+
+describe('Patterns', () => {
+  test('Vector and image patterns, strokes, text and transforms', async () => {
+    const style = createScene(300, 200)
+    const dots = new PatternDefinition(
+      new Path.Circle({ center: [5, 5], radius: 3, fillColor: '#e63' }),
+      { tile: new Rectangle(0, 0, 10, 10) }
+    )
+    const stripes = new PatternDefinition(
+      new Path.Rectangle({
+        rectangle: new Rectangle(0, 0, 4, 12),
+        fillColor: '#39c'
+      }),
+      { spacing: [4, 0] }
+    )
+    new Path.Rectangle({
+      rectangle: new Rectangle(10, 10, 80, 80),
+      fillColor: { pattern: dots }
+    })
+    new Path.Circle({
+      center: [150, 50],
+      radius: 32,
+      strokeWidth: 16,
+      strokeColor: { pattern: stripes, matrix: new Matrix().rotate(45) }
+    })
+    // The raster of a star, as an image pattern. Scaled images change how
+    // Chrome draws the same image later, so leave paper-js.gif to Rasters:
+    const raster = new Path.Star({
+      center: [0, 0],
+      points: 5,
+      radius1: 4,
+      radius2: 9,
+      fillColor: '#9c3',
+      insert: false
+    }).rasterize({ resolution: 144, insert: false })
+    new Path.Circle({
+      center: [250, 50],
+      radius: 40,
+      fillColor: { pattern: new PatternDefinition(raster, { spacing: 2 }) }
+    })
+    new PointText({
+      ...style,
+      point: [10, 160],
+      content: 'Pattern',
+      fontSize: 40,
+      fillColor: { pattern: stripes }
+    })
+    // The pattern transforms with the item:
+    const rect = new Path.Rectangle({
+      rectangle: new Rectangle(190, 120, 80, 60),
+      fillColor: { pattern: dots },
+      strokeColor: 'black'
+    })
+    rect.rotate(20)
+    rect.scale(1.2, 0.8)
+    await expectScene()
+  })
+})
+
+describe('Elliptical gradients', () => {
+  test('Applied, kept in a matrix, and exported to SVG', async () => {
+    createScene(250, 240)
+    const fillColor = {
+      gradient: { stops: ['white', '#fc3', '#e63', '#39c'], radial: true },
+      origin: [75, 60],
+      destination: [115, 60],
+      highlight: [65, 50]
+    }
+    function createItem(applyMatrix, x) {
+      const item = new Path.Rectangle({
+        rectangle: new Rectangle(35, 20, 80, 80),
+        fillColor,
+        applyMatrix
+      })
+      item.translate(x, 0)
+      item.scale(1.2, 0.8)
+      item.shear(0.4, 0)
+      return item
+    }
+    // The transformation applied, and kept in the matrix:
+    createItem(true, 0)
+    createItem(false, 110)
+    // Below them, the browser's rendering of both, exported to SVG:
+    const svg = paper.project.exportSVG({
+      asString: true,
+      bounds: new Rectangle(0, 0, 250, 120)
+    })
+    const raster = await loadRaster('data:image/svg+xml;base64,' + btoa(svg))
+    raster.position = paper.view.center.add(0, 60)
+    await expectScene()
+  })
+})
+
+describe('Strokes', () => {
+  test('Joins, caps, dashes and miter limits', async () => {
+    createScene(300, 200)
+    const zigzag = (x, y) => [
+      [x, y + 30],
+      [x + 20, y],
+      [x + 40, y + 30],
+      [x + 60, y]
+    ]
+    ;['miter', 'round', 'bevel'].forEach((strokeJoin, i) => {
+      new Path({
+        segments: zigzag(20 + i * 95, 20),
+        strokeColor: 'black',
+        strokeWidth: 10,
+        strokeJoin
+      })
+    })
+    ;['butt', 'round', 'square'].forEach((strokeCap, i) => {
+      new Path({
+        segments: [
+          [30 + i * 95, 90],
+          [80 + i * 95, 90]
+        ],
+        strokeColor: 'black',
+        strokeWidth: 12,
+        strokeCap
+      })
+    })
+    new Path({
+      segments: [
+        [20, 130],
+        [280, 130]
+      ],
+      strokeColor: '#39c',
+      strokeWidth: 4,
+      dashArray: [12, 6, 2, 6],
+      dashOffset: 4
+    })
+    new Path.Circle({
+      center: [60, 170],
+      radius: 20,
+      strokeColor: '#e63',
+      strokeWidth: 3,
+      dashArray: [8, 4]
+    })
+    // A sharp angle, cut off by a low miter limit:
+    ;[10, 2].forEach((miterLimit, i) => {
+      new Path({
+        segments: [
+          [140 + i * 80, 190],
+          [155 + i * 80, 145],
+          [170 + i * 80, 190]
+        ],
+        strokeColor: 'black',
+        strokeWidth: 8,
+        miterLimit
+      })
+    })
+    await expectScene()
+  })
+
+  test(`Strokes that scale, and strokes that don't`, async () => {
+    createScene(300, 120)
+    ;[true, false].forEach((strokeScaling, i) => {
+      const star = new Path.Star({
+        center: [80 + i * 150, 60],
+        points: 5,
+        radius1: 10,
+        radius2: 22,
+        strokeColor: 'black',
+        strokeWidth: 3,
+        strokeJoin: 'miter',
+        strokeScaling,
+        applyMatrix: false
+      })
+      star.scale(2.5, 1.2)
+    })
+    await expectScene()
+  })
+})
+
+describe('Stroke profiles', () => {
+  test('Tapers, pens, fills, gradients and effects', async () => {
+    createScene(300, 240)
+    // A taper, and a stroke that swells and thins like pressure:
+    new Path({
+      segments: [
+        [20, 25],
+        [130, 25]
+      ],
+      strokeColor: 'black',
+      strokeWidth: 16,
+      strokeProfile: [
+        { offset: 0, width: 0.1, smooth: false },
+        { offset: 110, width: 1.5, smooth: false }
+      ]
+    })
+    const wave = new Path({
+      segments: [
+        [20, 85],
+        [80, 50],
+        [140, 85]
+      ],
+      strokeColor: 'black',
+      strokeWidth: 20
+    })
+    wave.smooth({ type: 'catmull-rom' })
+    wave.strokeProfile = [
+      { offset: 0, width: 0.1 },
+      { offset: wave.length * 0.4, width: 1.2 },
+      { offset: wave.length, width: 0.1 }
+    ]
+    // A broad nib, a flat pen held at an angle:
+    const nib = new Path({
+      segments: [
+        [170, 80],
+        [200, 30],
+        [240, 80],
+        [280, 30]
+      ],
+      strokeColor: '#335',
+      strokeWidth: 24,
+      strokeCap: 'round',
+      strokeJoin: 'round'
+    })
+    nib.smooth({ type: 'catmull-rom' })
+    nib.strokeProfile = [{ offset: 0, aspect: 0.15, angle: -35 }]
+    // A closed path, and fills under and over the profile:
+    const ring = new Path.Circle({
+      center: [55, 155],
+      radius: 30,
+      strokeColor: '#e63',
+      strokeWidth: 12
+    })
+    ring.strokeProfile = [
+      { offset: 0, width: 0.3 },
+      { offset: ring.length / 2, width: 1.5 }
+    ]
+    ;['fill', 'stroke'].forEach((paintOrder, i) => {
+      const square = new Path.Rectangle({
+        point: [110 + i * 70, 125],
+        size: [50, 50],
+        fillColor: '#fc6',
+        strokeColor: '#39c',
+        strokeWidth: 14,
+        paintOrder
+      })
+      square.strokeProfile = [
+        { offset: 0, width: 0.2, smooth: false },
+        { offset: square.length, width: 1.6, smooth: false }
+      ]
+    })
+    // A gradient as the stroke color, and an effect before the profile, whose
+    // offset path doesn't carry it on yet:
+    const gradient = new Path({
+      segments: [
+        [20, 215],
+        [140, 215]
+      ],
+      strokeColor: {
+        gradient: { stops: ['#39c', '#e63'] },
+        origin: [20, 215],
+        destination: [140, 215]
+      },
+      strokeWidth: 18,
+      strokeCap: 'round'
+    })
+    gradient.strokeProfile = [
+      { offset: 0, width: 0.3 },
+      { offset: 60, width: 1 },
+      { offset: 120, width: 0.3 }
+    ]
+    const offset = new Path.Rectangle({
+      point: [195, 195],
+      size: [70, 30],
+      strokeColor: 'black',
+      strokeWidth: 6
+    })
+    offset.strokeProfile = [
+      { offset: 0, width: 0.3, smooth: false },
+      { offset: offset.length, width: 2, smooth: false }
+    ]
+    offset.addEffect({ type: 'offset', parameters: { distance: 6 } })
+    await expectScene()
+  })
+})
+
+describe('Live effects', () => {
+  test('Offset and outline, composited and rasterized', async () => {
+    createScene(300, 200)
+    const createStar = (x, y, props) =>
+      new Path.Star({
+        center: [x, y],
+        points: 5,
+        radius1: 12,
+        radius2: 26,
+        fillColor: '#39c',
+        strokeColor: 'black',
+        strokeWidth: 3,
+        ...props
+      })
+    // Offset and outline on their own:
+    createStar(50, 50).addEffect({
+      type: 'offset',
+      parameters: { distance: 8, join: 'round' }
+    })
+    createStar(150, 50, { strokeWidth: 8 }).addEffect({ type: 'outline' })
+    // What the offset draws beyond the item, through a temporary canvas for
+    // the group's opacity, the item's blend mode and its shadow:
+    const faded = createStar(250, 50)
+    faded.addEffect({ type: 'offset', parameters: { distance: 10 } })
+    new Group({ children: [faded], opacity: 0.5 })
+    new Path.Rectangle({
+      point: [20, 110],
+      size: [160, 70],
+      fillColor: '#fc6'
+    })
+    createStar(60, 145, {
+      fillColor: '#e63',
+      blendMode: 'multiply'
+    }).addEffect({ type: 'offset', parameters: { distance: 10 } })
+    createStar(140, 145, {
+      shadowColor: 'rgba(0, 0, 0, 0.5)',
+      shadowBlur: 6,
+      shadowOffset: [4, 4]
+    }).addEffect({ type: 'offset', parameters: { distance: 10 } })
+    // A raster of an item with an effect, without the item:
+    const rasterized = createStar(250, 145)
+    rasterized.addEffect({ type: 'offset', parameters: { distance: 10 } })
+    rasterized.rasterize({ resolution: 144 })
+    rasterized.remove()
+    await expectScene()
+  })
+})
+
+describe('Rasters', () => {
+  test('Transformed, smoothed and transparent', async () => {
+    createScene(300, 200)
+    const raster = await loadRaster('/assets/paper-js.gif')
+    raster.position = [80, 80]
+    raster.scale(0.8)
+    const rotated = raster.clone()
+    rotated.position = [220, 80]
+    rotated.rotate(20)
+    rotated.opacity = 0.5
+    // Small, scaled up, without and with smoothing:
+    ;['off', 'high'].forEach((smoothing, i) => {
+      const small = raster.clone()
+      small.set({ smoothing, scaling: 1 })
+      small.size = [16, 16]
+      small.position = [40 + i * 60, 170]
+      small.scale(3)
+    })
+    await expectScene()
+  })
+})
+
+describe('SVG import', () => {
+  // Paper.js's import on the left, the browser's own rendering of the same
+  // SVG on the right:
+  async function compare(name, width, height) {
+    createScene(width * 2 + 30, height + 20)
+    const svg = await (await fetch(`/assets/${name}`)).text()
+    const item = paper.project.importSVG(svg)
+    item.position = [10 + width / 2, 10 + height / 2]
+    const raster = await loadRaster(
+      'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)))
+    )
+    raster.position = [20 + width * 1.5, 10 + height / 2]
+    await expectScene()
+  }
+
+  test('gradients-1.svg', () => compare('gradients-1.svg', 450, 220))
+  test('gradients-2.svg', () => compare('gradients-2.svg', 300, 300))
+  test('viewbox.svg', () => compare('viewbox.svg', 300, 200))
+  test('symbol.svg', () => compare('symbol.svg', 150, 150))
+  test('butterfly.svg', () => compare('butterfly.svg', 399, 249))
+})

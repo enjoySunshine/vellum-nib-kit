@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+*.pem
+credentials.json
+/dist/*/
+/dist/*.min.js
+/dist/*.map
+/dist/paperjs.zip
+.vitest/
+coverage/
+
+# The baseline release, extracted by test/legacy/legacy.mjs:
+test/legacy/build/
