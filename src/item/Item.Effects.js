@@ -174,13 +174,36 @@ Item.inject(
        */
       getEffectOutput: function () {
         let output = this._effectOutput
-        if (output === undefined || this._effectVersion !== Effect._version) {
+        // The strokes of non-scaling profiles are drawn where the view puts
+        // them, so their outlines change with it, see Path#_getStrokeOutline():
+        const viewKey = this._hasEffects() ? this._getEffectViewKey() : ''
+        if (
+          output === undefined ||
+          this._effectVersion !== Effect._version ||
+          this._effectViewKey !== viewKey
+        ) {
           const art = this._hasEffects() && this._getEffectArt()
           output = art ? this._applyEffects(art) || art : null
           this._effectOutput = output
           this._effectVersion = Effect._version
+          this._effectViewKey = viewKey
         }
         return output
+      },
+
+      // The keys of where the item and its content draw their non-scaling
+      // stroke profiles, to update the output of the effects with the view:
+      _getEffectViewKey: function () {
+        let key = ''
+        function collect(item) {
+          const getKey = item._getStrokeOutlineKey
+          if (getKey) key += getKey.call(item) + ';'
+          const children = item._children
+          for (let i = 0, l = children ? children.length : 0; i < l; i++)
+            collect(children[i])
+        }
+        collect(this)
+        return key
       },
 
       // Applies the visible effects to the art in turn, and returns what they

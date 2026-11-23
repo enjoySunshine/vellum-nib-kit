@@ -222,10 +222,14 @@ Path.inject(
        * The path draws its stroke as the area that the pens sweep, filled
        * with the stroke color, as {@link PathItem#outline()} returns it,
        * and {@link Item#strokeBounds} and hit-testing measure that area.
-       * The children of compound paths are drawn with the stroke of their
-       * parent, without their profiles. {@link PathItem#offset()},
-       * the boolean operations, {@link PathItem#interpolate()} and SVG
-       * export return paths without the profile.
+       * Without {@link Style#strokeScaling}, the pens keep their size in the
+       * view, and the area follows the view's zoom, scaling and rotation, so
+       * that a round pen stays round on the screen also when the view scales
+       * the axes differently. The children of compound paths are drawn with
+       * the stroke of their parent, without their profiles.
+       * {@link PathItem#offset()}, the boolean operations,
+       * {@link PathItem#interpolate()} and SVG export return paths without
+       * the profile.
        *
        * @bean
        * @type ?StrokeProfileStop[]

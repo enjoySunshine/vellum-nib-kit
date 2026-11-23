@@ -11,8 +11,10 @@
  */
 
 import { describe } from 'vitest'
-import {
+import paper, {
   CompoundPath,
+  Group,
+  Matrix,
   Path,
   Project,
   Rectangle,
@@ -493,6 +495,266 @@ describe('StrokeProfile', () => {
       strokeWidth: 10
     })
     equals(compound.strokeBounds.height, 10)
+  })
+
+  test('Non-scaling profiles follow the view', () => {
+    const view = paper.view
+    view.setViewSize(400, 300)
+    // A line down from (200, 40) to (200, 200), without stroke scaling:
+    function createLine(profile) {
+      const path = new Path({
+        segments: [[200, 40], [200, 200]],
+        strokeColor: 'black',
+        strokeWidth: 10,
+        strokeScaling: false
+      })
+      if (profile) {
+        path.strokeProfile = [
+          { offset: 0, width: 1 },
+          { offset: path.length, width: 1 }
+        ]
+      }
+      return path
+    }
+    const plain = createLine(false)
+    const profiled = createLine(true)
+    const hit = (path, dx, dy) =>
+      !!path.hitTest([200 + dx, 120 + dy], { stroke: true, tolerance: 0 })
+    // Stretched horizontally by 2, the strokes keep their width in the view,
+    // so they are half as wide in the project, and stay round:
+    view.matrix = new Matrix().scale(2, 1)
+    equals(plain.strokeBounds, new Rectangle(197.5, 40, 5, 160))
+    equals(profiled.strokeBounds, plain.strokeBounds)
+    equals(
+      profiled.outline({ insert: false }).bounds,
+      profiled.strokeBounds,
+      'outline'
+    )
+    equals(
+      [hit(plain, 1, 0), hit(plain, 2, 0), hit(plain, 3, 0)],
+      [true, true, false],
+      'plain hits'
+    )
+    equals(
+      [hit(profiled, 1, 0), hit(profiled, 2, 0), hit(profiled, 3, 0)],
+      [true, true, false],
+      'profiled hits'
+    )
+    // Stretched vertically by 3, both are 10 wide in the project:
+    view.matrix = new Matrix().scale(1, 3)
+    equals(plain.strokeBounds.width, 10)
+    equals(profiled.strokeBounds, plain.strokeBounds)
+    const hits = path => [1, 2, 3, 4, 5, 6].map(dx => hit(path, dx, 0))
+    equals(hits(plain), [true, true, true, true, true, false], 'plain hits')
+    equals(
+      hits(profiled),
+      [true, true, true, true, true, false],
+      'profiled hits'
+    )
+    // Turning the view keeps the strokes as wide as they are, and turns
+    // them round with it, so their bounds stay the same:
+    view.matrix = new Matrix().rotate(30)
+    equals(plain.strokeBounds, profiled.strokeBounds)
+    const turns = [-5, -2, 0, 2, 5, 6].map(dx =>
+      [hit(plain, dx, 0), hit(profiled, dx, 0)].join()
+    )
+    equals(
+      turns,
+      [
+        'true,true', 'true,true', 'true,true', 'true,true', 'true,true',
+        'false,false'
+      ],
+      'hits in the turned view'
+    )
+    view.matrix = new Matrix()
+    const isHit = (path, point) =>
+      !!path.hitTest(point, { stroke: true, tolerance: 0 })
+    const line = new Path({
+      segments: [[20, 150], [180, 150]],
+      strokeColor: 'black',
+      strokeWidth: 10,
+      strokeScaling: false
+    })
+    const lineProfile = line.clone()
+    lineProfile.strokeProfile = [
+      { offset: 0, width: 1 },
+      { offset: lineProfile.length, width: 1 }
+    ]
+    // At zoom 2, both are 5 high in the project, and 10 high on the screen:
+    view.zoom = 2
+    equals(line.strokeBounds, new Rectangle(20, 147.5, 160, 5))
+    equals(lineProfile.strokeBounds, line.strokeBounds)
+    equals(
+      [isHit(line, [100, 149]), isHit(lineProfile, [100, 149])],
+      [true, true],
+      'on the stroke at zoom 2'
+    )
+    equals(
+      [isHit(line, [100, 148]), isHit(lineProfile, [100, 148])],
+      [true, true],
+      'within 2 at zoom 2'
+    )
+    equals(
+      [isHit(line, [100, 147]), isHit(lineProfile, [100, 147])],
+      [false, false],
+      'within 3 at zoom 2'
+    )
+    // At zoom 4, they are 2.5 high in the project:
+    view.zoom = 4
+    equals(line.strokeBounds, new Rectangle(20, 148.75, 160, 2.5))
+    equals(lineProfile.strokeBounds, line.strokeBounds)
+    equals(
+      [isHit(line, [100, 149]), isHit(lineProfile, [100, 149])],
+      [true, true],
+      'within 1 at zoom 4'
+    )
+    // Changing the view after reading the outline changes all of it again:
+    view.zoom = 2
+    const outline = lineProfile.outline({ insert: false })
+    const preview = lineProfile.previewBounds
+    view.zoom = 1
+    equals(lineProfile.strokeBounds, new Rectangle(20, 145, 160, 10))
+    equals(
+      lineProfile.outline({ insert: false }).bounds,
+      new Rectangle(20, 145, 160, 10),
+      'outline back at zoom 1'
+    )
+    equals(
+      lineProfile.previewBounds,
+      new Rectangle(20, 145, 160, 10),
+      'preview back at zoom 1'
+    )
+    equals(
+      [
+        isHit(lineProfile, [100, 149]),
+        isHit(lineProfile, [100, 145]),
+        isHit(lineProfile, [100, 144])
+      ],
+      [true, true, false],
+      'hits back at zoom 1'
+    )
+    equals(outline.bounds.height, 5, 'the earlier outline is unchanged')
+    equals(preview.height, 5, 'the earlier preview is unchanged')
+    view.zoom = 2
+    equals(
+      lineProfile.outline({ insert: false }).bounds,
+      new Rectangle(20, 147.5, 160, 5),
+      'outline follows the view again'
+    )
+    // A round pen stays round on the screen when the view scales unevenly:
+    view.matrix = new Matrix().scale(2, 1)
+    const diagonal = new Path({
+      segments: [[0, 0], [100, 100]],
+      strokeColor: 'black',
+      strokeWidth: 10,
+      strokeScaling: false
+    })
+    diagonal.strokeProfile = [
+      { offset: 0, width: 1 },
+      { offset: diagonal.length, width: 1 }
+    ]
+    const area = diagonal.outline({ insert: false }).clone({ insert: false })
+    area.transform(view.matrix)
+    equals(
+      Math.abs(area.area),
+      Math.hypot(200, 100) * 10,
+      null,
+      { tolerance: 0.5 }
+    )
+  })
+
+  test('Non-scaling profiles taper as plain strokes of their widths', () => {
+    const view = paper.view
+    view.setViewSize(400, 300)
+    view.matrix = new Matrix().scale(2, 1)
+    // From half the width to twice it, from (200, 40) to (200, 200):
+    const taper = new Path({
+      segments: [[200, 40], [200, 200]],
+      strokeColor: 'black',
+      strokeWidth: 10,
+      strokeScaling: false,
+      strokeProfile: [
+        { offset: 0, width: 0.5, smooth: false },
+        { offset: 200, width: 2, smooth: false }
+      ]
+    })
+    const start = new Path({
+      segments: [[200, 40], [200, 80]],
+      strokeColor: 'black',
+      strokeWidth: 5,
+      strokeScaling: false
+    })
+    const end = new Path({
+      segments: [[200, 160], [200, 200]],
+      strokeColor: 'black',
+      strokeWidth: 20,
+      strokeScaling: false
+    })
+    // The ends are as wide in the view as plain strokes of 5 and 20:
+    const profileOutline = taper.outline({ insert: false })
+    equals(
+      profileOutline.getNearestPoint([190, 40]).x,
+      start.strokeBounds.left,
+      null,
+      { tolerance: 0.1 }
+    )
+    equals(
+      profileOutline.getNearestPoint([190, 200]).x,
+      end.strokeBounds.left,
+      null,
+      { tolerance: 0.1 }
+    )
+    equals(taper.strokeBounds.width < 10, true, 'narrower in the project')
+    equals(
+      taper.strokeBounds.width > 9.9,
+      true,
+      'as wide as it is on the screen'
+    )
+  })
+
+  test('Scaling and turning the paths keeps non-scaling profile widths', () => {
+    const view = paper.view
+    view.setViewSize(400, 300)
+    // Scaling the path itself scales its length, but not the profile:
+    const scaled = new Path({
+      segments: [[20, 150], [180, 150]],
+      strokeColor: 'black',
+      strokeWidth: 10,
+      strokeScaling: false
+    })
+    scaled.strokeProfile = [
+      { offset: 0, width: 1 },
+      { offset: scaled.length, width: 1 }
+    ]
+    scaled.scale(3)
+    equals(scaled.length, 480)
+    equals(scaled.strokeBounds.height, 10)
+    // A group that scales the path keeps the profile's width, while the
+    // path follows the group:
+    const path = new Path({
+      segments: [[20, 150], [180, 150]],
+      strokeColor: 'black',
+      strokeWidth: 10,
+      strokeScaling: false
+    })
+    path.strokeProfile = [
+      { offset: 0, width: 1 },
+      { offset: path.length, width: 1 }
+    ]
+    const group = new Group({ children: [path] })
+    group.scale(2)
+    equals(path.length, 320, 'the length follows the group')
+    const plain = new Path({
+      segments: [[20, 150], [180, 150]],
+      strokeColor: 'black',
+      strokeWidth: 10,
+      strokeScaling: false
+    })
+    const plainGroup = new Group({ children: [plain] })
+    plainGroup.scale(2)
+    equals(path.strokeBounds, plain.strokeBounds, 'local stroke bounds')
+    equals(group.strokeBounds, plainGroup.strokeBounds, 'group stroke bounds')
+    equals(path.strokeBounds.height, 10)
   })
 
   test('StrokeProfileStop#equals() compares its values and place', () => {

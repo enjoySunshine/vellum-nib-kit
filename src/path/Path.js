@@ -2216,17 +2216,22 @@ const Path = PathItem.extend(
         // Note that paths need at least two segments to have an actual
         // stroke. But we still check for segments with the radius fallback
         // check if there is only one segment.
-        // Stroke profiles are hit within the outline of their stroke:
+        // Stroke profiles are hit within the outline of their stroke. Without
+        // stroke scaling, it is drawn with the pens kept in the view's
+        // coordinates, and the outline is measured there too, so that it
+        // stays round on the screen when the view scales unevenly:
         const outline = (
           hitStroke &&
           this._hasStrokeProfile() &&
           this._getStrokeOutline()
         )
         if (loc && outline) {
+          const area = strokeSpace ? outline.clone({ insert: false }) : outline
+          if (strokeSpace) area.transform(strokeSpace)
           if (
-            !outline.contains(strokePoint) &&
+            !area.contains(strokePoint) &&
             !isCloseEnough(
-              outline.getNearestPoint(strokePoint), tolerancePadding
+              area.getNearestPoint(strokePoint), tolerancePadding
             )
           )
             loc = null

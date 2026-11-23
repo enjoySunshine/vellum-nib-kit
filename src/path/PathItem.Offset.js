@@ -2444,17 +2444,21 @@ PathItem.inject(
       outline: function (options) {
         options = options || {}
         let result
-        if (
+        // The outline of the path's own stroke, see #_getStrokeOutline(),
+        // also with its matrix applied where it scales the stroke without
+        // itself, as the stroke profile then depends on the view:
+        const matrix = this._matrix
+        const useOutline = (
           !this._children &&
-          this._matrix.isIdentity() &&
           options.width === undefined &&
           !options.join &&
           !options.cap &&
-          !options.miterLimit
-        ) {
-          // Paths keep the outline of their own stroke, see
-          // #_getStrokeOutline():
+          !options.miterLimit &&
+          (matrix.isIdentity() || !!this._getStrokeOutlineKey())
+        )
+        if (useOutline) {
           result = this._getStrokeOutline().clone({ insert: false })
+          if (!matrix.isIdentity()) result.transform(matrix, true, true)
         } else {
           const path = prepare(this)
           result = outlineStroke(
@@ -2528,24 +2532,66 @@ PathItem.inject(
       },
 
       // The outline of the path's stroke in its own coordinates, with its
-      // dashes, kept until its geometry or its stroke changes, see
+      // dashes, kept until its geometry, its stroke or the view changes, see
       // Path#_changed(). Paths with a stroke profile draw, bound and
-      // hit-test their stroke with it:
+      // hit-test their stroke with it.
+      //
+      // Without stroke scaling, the pens keep their size in the view. Their
+      // area is the one in the view's coordinates, mapped back through the
+      // stroke matrix, so that a round pen stays round on the screen also
+      // when the view scales the axes differently. The matrix is part of the
+      // key, so a change of the view recomputes the outline:
       _getStrokeOutline: function () {
+        const matrix = this._getStrokeOutlineMatrix()
+        const key = this._getStrokeOutlineKey()
+        if (this._strokeOutline && this._strokeOutlineKey === key)
+          return this._strokeOutline
+        const path = this.clone({ insert: false })
+        // Work in the path's content coordinates, without the matrix of the
+        // item or its ancestors, and measure the stroke where it is drawn,
+        // in the view's coordinates, to bring the area back afterwards:
+        path.setMatrix(new Matrix())
+        path.reduce()
+        if (matrix) path.transform(matrix.inverted(), true, true)
+        const outline = outlineStroke(
+          getDashes(
+            [path],
+            this.getDashArray(),
+            this.getDashOffset()
+          ),
+          this.getStrokeWidth() / 2,
+          this.getStrokeJoin(),
+          this.getStrokeCap(),
+          this.getMiterLimit()
+        ).reduce()
+        if (matrix) outline.transform(matrix, true, true)
+        this._strokeOutline = outline
+        this._strokeOutlineKey = key
+        return outline
+      },
+
+      // The matrix from the view's coordinates back to the path's content
+      // coordinates, where its stroke is drawn without stroke scaling, or
+      // null if the stroke scales with the path. It is the inverse of the
+      // shiftless view matrix, so that moving the view or the item doesn't
+      // move the outline, as it is returned without either translation:
+      _getStrokeOutlineMatrix: function () {
         return (
-          this._strokeOutline ||
-          (this._strokeOutline = outlineStroke(
-            getDashes(
-              [this.clone({ insert: false }).reduce()],
-              this.getDashArray(),
-              this.getDashOffset()
-            ),
-            this.getStrokeWidth() / 2,
-            this.getStrokeJoin(),
-            this.getStrokeCap(),
-            this.getMiterLimit()
-          ).reduce())
+          this._hasStrokeProfile &&
+          this._hasStrokeProfile() &&
+          !this.getStyle().getStrokeScaling() &&
+          this.getViewMatrix()._shiftless().invert()
         )
+      },
+
+      // The scaling and turning of the outline without stroke scaling, to
+      // keep it in sync with the view. Moving the view keeps it, as the
+      // stroke moves with the path:
+      _getStrokeOutlineKey: function () {
+        const matrix = this._getStrokeOutlineMatrix()
+        return matrix
+          ? [matrix._a, matrix._b, matrix._c, matrix._d].join(',')
+          : ''
       }
     }
   })()
